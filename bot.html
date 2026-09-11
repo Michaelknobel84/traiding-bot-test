@@ -1224,6 +1224,7 @@
         state.ws = ws;
 
         ws.addEventListener('open', () => {
+          if (state.ws !== ws) return;
           state.reconnectAttempts = 0;
           setConnectionStatus('CONNECTED', 'status-good');
           logEvent('WebSocket verbunden.');
@@ -1231,6 +1232,7 @@
         });
 
         ws.addEventListener('message', event => {
+          if (state.ws !== ws) return;
           try {
             const payload = JSON.parse(event.data);
             handleMarketData(payload);
@@ -1240,11 +1242,13 @@
         });
 
         ws.addEventListener('error', () => {
+          if (state.ws !== ws) return;
           setConnectionStatus('DISCONNECTED', 'status-bad');
           logEvent('WebSocket-Fehler erkannt.');
         });
 
         ws.addEventListener('close', () => {
+          if (state.ws !== ws) return;
           setConnectionStatus('DISCONNECTED', 'status-bad');
           logEvent('WebSocket getrennt.');
           if (state.testRunning && state.trade) {
