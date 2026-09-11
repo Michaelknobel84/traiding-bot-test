@@ -1,33 +1,1283 @@
-BTC 10-Min Paper Bot
-Nur Simulation. Keine echten Orders, keine API-Keys. 10 Minuten sind kein Profitabilitätsnachweis.
-Status
-Bereit
-—
-BTC/USDT Livepreis · Binance Public WebSocket
-Zeit
-10:00
-Saldo
-50.00 CHF
-Position
-Keine
-Entry
-—
-Stop
-—
-Ziel
-—
-Risiko
-≤ 0.50 CHF
-Unreal. PnL
-0.00 CHF
-Trades
-0
-Gewinner
-0
-Verlierer
-0
-Real. PnL
-0.00 CHF
-10-Minuten-Test starten Reset
-Log
-Bereit.
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>BTC Paper Bot</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: #111c2d;
+      --panel-2: #16253c;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f4f8ff;
+      --muted: #95a8c8;
+      --accent: #23c9a9;
+      --accent-2: #2f7cff;
+      --danger: #ff647c;
+      --warning: #f6b73c;
+      --shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(47, 124, 255, 0.18), transparent 35%),
+        linear-gradient(180deg, #07111f 0%, #091523 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: env(safe-area-inset-top, 0) 14px env(safe-area-inset-bottom, 16px);
+    }
+
+    .app {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 18px 0 22px;
+    }
+
+    .hero {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(17, 28, 45, 0.95), rgba(12, 21, 34, 0.98));
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+
+    .title {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.95rem;
+      letter-spacing: 0.06em;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+
+    .connection-pill {
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      white-space: nowrap;
+    }
+
+    .ticker-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .ticker-item,
+    .card,
+    .panel {
+      border: 1px solid var(--border);
+      background: rgba(22, 37, 60, 0.88);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .ticker-item {
+      padding: 12px;
+    }
+
+    .label {
+      display: block;
+      font-size: 0.74rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .card {
+      padding: 14px;
+    }
+
+    .card .value.small {
+      font-size: 0.98rem;
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 16px;
+      padding: 16px 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      transition: transform 0.16s ease, opacity 0.16s ease;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .primary { background: linear-gradient(135deg, #1ba97f, #21d1b1); }
+    .danger { background: linear-gradient(135deg, #b73b58, #ff647c); }
+    .secondary { background: linear-gradient(135deg, #26456f, #365f98); }
+
+    .panel {
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    canvas {
+      width: 100%;
+      height: 250px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(6, 10, 18, 0.92), rgba(12, 19, 31, 0.88));
+      display: block;
+    }
+
+    .log {
+      max-height: 260px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 8px;
+      padding-right: 4px;
+    }
+
+    .log-entry {
+      font-size: 0.92rem;
+      line-height: 1.35;
+      color: var(--text);
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    details {
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    summary {
+      list-style: none;
+      cursor: pointer;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    .debug-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .debug-item {
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .status-good { color: var(--accent); }
+    .status-warn { color: var(--warning); }
+    .status-bad { color: var(--danger); }
+    .mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+    .footnote { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+    .report { white-space: pre-line; line-height: 1.45; color: var(--text); }
+
+    @media (max-width: 560px) {
+      h1 { font-size: 1.62rem; }
+      .ticker-row,
+      .grid,
+      .buttons,
+      .debug-grid { grid-template-columns: 1fr 1fr; }
+      .title { flex-direction: column; align-items: stretch; }
+      .connection-pill { align-self: flex-start; }
+      button { padding: 16px 10px; }
+      canvas { height: 220px; }
+    }
+
+    @media (max-width: 400px) {
+      .ticker-row,
+      .grid,
+      .buttons,
+      .debug-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div class="title">
+        <div>
+          <h1>BTC PAPER BOT</h1>
+          <p class="subtitle">Paper Trading Test für BTC/USDT. Keine echten Orders, keine API-Keys, keine Wallet-Verbindung.</p>
+        </div>
+        <div id="connectionPill" class="connection-pill mono">DISCONNECTED</div>
+      </div>
+      <div class="ticker-row">
+        <div class="ticker-item"><span class="label">BTC Preis</span><span id="priceValue" class="value mono">—</span></div>
+        <div class="ticker-item"><span class="label">Bid</span><span id="bidValue" class="value mono">—</span></div>
+        <div class="ticker-item"><span class="label">Ask</span><span id="askValue" class="value mono">—</span></div>
+        <div class="ticker-item"><span class="label">Letzter Trade</span><span id="lastTradeValue" class="value mono">—</span></div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card"><span class="label">Status</span><div id="statusValue" class="value">Bereit</div></div>
+      <div class="card"><span class="label">Restzeit</span><div id="timeValue" class="value mono">10:00</div></div>
+      <div class="card"><span class="label">Saldo</span><div id="balanceValue" class="value mono">50.00 CHF</div></div>
+      <div class="card"><span class="label">Position</span><div id="positionValue" class="value">Keine</div></div>
+      <div class="card"><span class="label">Entry</span><div id="entryValue" class="value small mono">—</div></div>
+      <div class="card"><span class="label">Stop</span><div id="stopValue" class="value small mono">—</div></div>
+      <div class="card"><span class="label">Take Profit</span><div id="targetValue" class="value small mono">—</div></div>
+      <div class="card"><span class="label">Positionsgröße</span><div id="sizeValue" class="value small mono">—</div></div>
+      <div class="card"><span class="label">Unrealized PnL</span><div id="unrealizedValue" class="value small mono">0.00 CHF</div></div>
+      <div class="card"><span class="label">Realized PnL</span><div id="realizedValue" class="value small mono">0.00 CHF</div></div>
+      <div class="card"><span class="label">Trades</span><div id="tradesValue" class="value mono">0</div></div>
+      <div class="card"><span class="label">Gewinner</span><div id="winnersValue" class="value mono">0</div></div>
+      <div class="card"><span class="label">Verlierer</span><div id="losersValue" class="value mono">0</div></div>
+      <div class="card"><span class="label">Win Rate</span><div id="winRateValue" class="value mono">0.0%</div></div>
+      <div class="card"><span class="label">Max Drawdown</span><div id="drawdownValue" class="value small mono">0.00 CHF</div></div>
+      <div class="card"><span class="label">Risiko / Trade</span><div id="riskValue" class="value small mono">0.50 CHF</div></div>
+      <div class="card"><span class="label">Gebühren</span><div id="feesValue" class="value small mono">0.00 CHF</div></div>
+    </section>
+
+    <section class="buttons">
+      <button id="startBtn" class="primary">10-Minuten-Test starten</button>
+      <button id="stopBtn" class="danger">Stop</button>
+      <button id="resetBtn" class="secondary">Reset</button>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Live Chart</h2>
+        <span class="footnote">Letzte ~3 Minuten · Preis / EMA9 / EMA21</span>
+      </div>
+      <canvas id="chartCanvas" width="720" height="250"></canvas>
+    </section>
+
+    <section class="panel">
+      <details>
+        <summary class="panel-header">
+          <h2 class="panel-title">Debug</h2>
+          <span class="footnote">Aufklappen</span>
+        </summary>
+        <div class="debug-grid">
+          <div class="debug-item"><span class="label">WebSocket</span><div id="debugSocket" class="value small mono">DISCONNECTED</div></div>
+          <div class="debug-item"><span class="label">Datenpunkte</span><div id="debugPoints" class="value small mono">0</div></div>
+          <div class="debug-item"><span class="label">EMA9</span><div id="debugEma9" class="value small mono">—</div></div>
+          <div class="debug-item"><span class="label">EMA21</span><div id="debugEma21" class="value small mono">—</div></div>
+          <div class="debug-item"><span class="label">Momentum</span><div id="debugMomentum" class="value small mono">—</div></div>
+          <div class="debug-item"><span class="label">Spread</span><div id="debugSpread" class="value small mono">—</div></div>
+          <div class="debug-item"><span class="label">Signal</span><div id="debugSignal" class="value small mono">NONE</div></div>
+          <div class="debug-item"><span class="label">Cooldown</span><div id="debugCooldown" class="value small mono">0s</div></div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Trade Log</h2>
+        <span class="footnote">Zeitstempel inklusive</span>
+      </div>
+      <div id="logContainer" class="log"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Abschlussbericht</h2>
+        <span class="footnote">Wird nach Testende aktualisiert</span>
+      </div>
+      <div id="reportValue" class="report">Noch kein Abschlussbericht vorhanden.</div>
+      <p class="footnote">Dieser kurze Test beweist keine langfristige Profitabilität.</p>
+    </section>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const CONFIG = {
+        symbol: 'BTCUSDT',
+        startBalance: 50,
+        riskPerTrade: 0.5,
+        sessionSeconds: 600,
+        feeRate: 0.001,
+        minSlip: 0.0001,
+        maxSlip: 0.0003,
+        stopPercent: 0.0025,
+        takeProfitPercent: 0.004,
+        cooldownWinMs: 20000,
+        cooldownLossMs: 20000,
+        cooldownTwoLossesMs: 45000,
+        noTradeAfterLosses: 3,
+        lossLimit: -2,
+        momentumWindowMs: 7000,
+        staleDataMs: 5000,
+        reconnectBaseMs: 2000,
+        reconnectMaxMs: 10000,
+        chartWindowMs: 180000,
+        trailTriggerR: 0.9,
+        breakEvenBuffer: 0.00015,
+        entryRelaxAfterMs: 90000,
+        normalMomentumThreshold: 0.00035,
+        relaxedMomentumThreshold: 0.00012,
+        maxSpreadPercent: 0.0008,
+      };
+
+      const els = {
+        connectionPill: document.getElementById('connectionPill'),
+        priceValue: document.getElementById('priceValue'),
+        bidValue: document.getElementById('bidValue'),
+        askValue: document.getElementById('askValue'),
+        lastTradeValue: document.getElementById('lastTradeValue'),
+        statusValue: document.getElementById('statusValue'),
+        timeValue: document.getElementById('timeValue'),
+        balanceValue: document.getElementById('balanceValue'),
+        positionValue: document.getElementById('positionValue'),
+        entryValue: document.getElementById('entryValue'),
+        stopValue: document.getElementById('stopValue'),
+        targetValue: document.getElementById('targetValue'),
+        sizeValue: document.getElementById('sizeValue'),
+        unrealizedValue: document.getElementById('unrealizedValue'),
+        realizedValue: document.getElementById('realizedValue'),
+        tradesValue: document.getElementById('tradesValue'),
+        winnersValue: document.getElementById('winnersValue'),
+        losersValue: document.getElementById('losersValue'),
+        winRateValue: document.getElementById('winRateValue'),
+        drawdownValue: document.getElementById('drawdownValue'),
+        riskValue: document.getElementById('riskValue'),
+        feesValue: document.getElementById('feesValue'),
+        startBtn: document.getElementById('startBtn'),
+        stopBtn: document.getElementById('stopBtn'),
+        resetBtn: document.getElementById('resetBtn'),
+        chartCanvas: document.getElementById('chartCanvas'),
+        logContainer: document.getElementById('logContainer'),
+        reportValue: document.getElementById('reportValue'),
+        debugSocket: document.getElementById('debugSocket'),
+        debugPoints: document.getElementById('debugPoints'),
+        debugEma9: document.getElementById('debugEma9'),
+        debugEma21: document.getElementById('debugEma21'),
+        debugMomentum: document.getElementById('debugMomentum'),
+        debugSpread: document.getElementById('debugSpread'),
+        debugSignal: document.getElementById('debugSignal'),
+        debugCooldown: document.getElementById('debugCooldown'),
+      };
+
+      const state = {
+        ws: null,
+        reconnectTimer: null,
+        reconnectAttempts: 0,
+        status: 'Bereit',
+        connectionStatus: 'DISCONNECTED',
+        testRunning: false,
+        testFinished: false,
+        startTimestamp: 0,
+        endTimestamp: 0,
+        timerId: null,
+        prices: [],
+        spreads: [],
+        currentPrice: null,
+        bid: null,
+        ask: null,
+        lastTrade: null,
+        lastTickAt: 0,
+        ema9: null,
+        ema21: null,
+        lastSignal: 'NONE',
+        pageVisible: document.visibilityState === 'visible',
+        trade: null,
+        cooldownUntil: 0,
+        consecutiveLosses: 0,
+        trades: [],
+        realizedPnl: 0,
+        totalFees: 0,
+        balance: CONFIG.startBalance,
+        equityPeak: CONFIG.startBalance,
+        maxDrawdown: 0,
+        noMoreTrades: false,
+        lossLimitHit: false,
+        relaxedEntry: false,
+      };
+
+      const chartCtx = els.chartCanvas.getContext('2d');
+
+      function formatTimeStamp(date = new Date()) {
+        return date.toLocaleTimeString('de-DE', { hour12: false });
+      }
+
+      function logEvent(message) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.textContent = `${formatTimeStamp()} ${message}`;
+        els.logContainer.prepend(entry);
+      }
+
+      function formatPrice(value) {
+        return Number.isFinite(value) ? value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+      }
+
+      function formatSize(value) {
+        return Number.isFinite(value) ? value.toLocaleString('de-DE', { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + ' BTC' : '—';
+      }
+
+      function formatChf(value) {
+        const safe = Number.isFinite(value) ? value : 0;
+        return `${safe.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} CHF`;
+      }
+
+      function formatPercent(value) {
+        return Number.isFinite(value) ? `${(value * 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '—';
+      }
+
+      function setStatus(text, cls = '') {
+        state.status = text;
+        els.statusValue.textContent = text;
+        els.statusValue.className = `value ${cls}`.trim();
+      }
+
+      function setConnectionStatus(text, cls = '') {
+        state.connectionStatus = text;
+        els.connectionPill.textContent = text;
+        els.connectionPill.className = `connection-pill mono ${cls}`.trim();
+        els.debugSocket.textContent = text;
+        els.debugSocket.className = `value small mono ${cls}`.trim();
+      }
+
+      function isFinitePositive(value) {
+        return Number.isFinite(value) && value > 0;
+      }
+
+      function getMidPrice() {
+        if (isFinitePositive(state.bid) && isFinitePositive(state.ask)) {
+          return (state.bid + state.ask) / 2;
+        }
+        if (isFinitePositive(state.lastTrade)) {
+          return state.lastTrade;
+        }
+        return isFinitePositive(state.currentPrice) ? state.currentPrice : null;
+      }
+
+      function isLiveDataHealthy() {
+        return state.connectionStatus === 'CONNECTED' && Date.now() - state.lastTickAt <= CONFIG.staleDataMs && isFinitePositive(getMidPrice());
+      }
+
+      function trimSeries() {
+        const cutoff = Date.now() - Math.max(CONFIG.chartWindowMs, CONFIG.momentumWindowMs * 4);
+        while (state.prices.length && state.prices[0].time < cutoff) state.prices.shift();
+        while (state.spreads.length && state.spreads[0].time < cutoff) state.spreads.shift();
+      }
+
+      function updateIndicators(price) {
+        if (!isFinitePositive(price)) return;
+        const alpha9 = 2 / (9 + 1);
+        const alpha21 = 2 / (21 + 1);
+        state.ema9 = state.ema9 == null ? price : state.ema9 + alpha9 * (price - state.ema9);
+        state.ema21 = state.ema21 == null ? price : state.ema21 + alpha21 * (price - state.ema21);
+      }
+
+      function getMomentum() {
+        if (state.prices.length < 2 || !isFinitePositive(state.currentPrice)) return 0;
+        const cutoff = Date.now() - CONFIG.momentumWindowMs;
+        let basePoint = null;
+        for (let i = state.prices.length - 1; i >= 0; i -= 1) {
+          if (state.prices[i].time <= cutoff) {
+            basePoint = state.prices[i];
+            break;
+          }
+        }
+        basePoint = basePoint || state.prices[0];
+        if (!basePoint || !isFinitePositive(basePoint.price)) return 0;
+        return (state.currentPrice - basePoint.price) / basePoint.price;
+      }
+
+      function getSpreadPercent() {
+        if (!isFinitePositive(state.bid) || !isFinitePositive(state.ask)) return Infinity;
+        const mid = (state.bid + state.ask) / 2;
+        if (!isFinitePositive(mid)) return Infinity;
+        return (state.ask - state.bid) / mid;
+      }
+
+      function getSpreadLimit() {
+        const values = state.spreads.map(item => item.value).filter(Number.isFinite);
+        if (!values.length) return CONFIG.maxSpreadPercent;
+        const sorted = values.slice().sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)] || CONFIG.maxSpreadPercent;
+        return Math.max(CONFIG.maxSpreadPercent, median * 2.5);
+      }
+
+      function getCooldownRemainingMs() {
+        return Math.max(0, state.cooldownUntil - Date.now());
+      }
+
+      function calculatePositionSize(entryPrice, stopPrice) {
+        const stopDistance = Math.abs(entryPrice - stopPrice);
+        if (!isFinitePositive(entryPrice) || !isFinitePositive(stopPrice) || !isFinitePositive(stopDistance)) return 0;
+        const rawSize = CONFIG.riskPerTrade / stopDistance;
+        if (!Number.isFinite(rawSize) || rawSize <= 0) return 0;
+        return Math.max(0, rawSize);
+      }
+
+      function getNextSlippage() {
+        const ratio = CONFIG.minSlip + Math.random() * (CONFIG.maxSlip - CONFIG.minSlip);
+        return ratio;
+      }
+
+      function getMarketExitPrice(side, reasonLabel) {
+        const slip = getNextSlippage();
+        let price = getMidPrice();
+        if (side === 'LONG' && isFinitePositive(state.bid)) price = state.bid * (1 - slip);
+        if (side === 'SHORT' && isFinitePositive(state.ask)) price = state.ask * (1 + slip);
+        if (!isFinitePositive(price)) price = state.currentPrice;
+        if (!isFinitePositive(price)) return null;
+        return { price, slip, reasonLabel };
+      }
+
+      function openTrade(side, reason) {
+        if (!state.testRunning || state.trade || state.noMoreTrades || !isLiveDataHealthy()) return;
+        const slip = getNextSlippage();
+        let entryPrice = null;
+
+        if (side === 'LONG' && isFinitePositive(state.ask)) entryPrice = state.ask * (1 + slip);
+        if (side === 'SHORT' && isFinitePositive(state.bid)) entryPrice = state.bid * (1 - slip);
+        if (!isFinitePositive(entryPrice)) entryPrice = getMidPrice();
+        if (!isFinitePositive(entryPrice)) return;
+
+        const stopPrice = side === 'LONG'
+          ? entryPrice * (1 - CONFIG.stopPercent)
+          : entryPrice * (1 + CONFIG.stopPercent);
+        const takeProfitPrice = side === 'LONG'
+          ? entryPrice * (1 + CONFIG.takeProfitPercent)
+          : entryPrice * (1 - CONFIG.takeProfitPercent);
+
+        const size = calculatePositionSize(entryPrice, stopPrice);
+        if (!isFinitePositive(size)) {
+          logEvent(`${side} Signal verworfen: ungültige Positionsgröße.`);
+          return;
+        }
+
+        const entryFee = entryPrice * size * CONFIG.feeRate;
+        const riskEstimate = Math.abs(entryPrice - stopPrice) * size;
+        if (!Number.isFinite(entryFee) || !Number.isFinite(riskEstimate)) return;
+
+        state.trade = {
+          side,
+          openedAt: Date.now(),
+          entryPrice,
+          stopPrice,
+          takeProfitPrice,
+          size,
+          reason,
+          entryFee,
+          stopMovedToBreakEven: false,
+          maxFavorableR: 0,
+          spreadAtEntry: getSpreadPercent(),
+        };
+
+        state.totalFees += entryFee;
+        logEvent(`${side} Signal erkannt: ${reason}`);
+        logEvent(`${side} geöffnet @ ${formatPrice(entryPrice)}`);
+        logEvent(`Stop: ${formatPrice(stopPrice)}`);
+        logEvent(`Target: ${formatPrice(takeProfitPrice)}`);
+        setStatus(`${side} aktiv`, side === 'LONG' ? 'status-good' : 'status-warn');
+      }
+
+      function getCurrentTradePnl(trade, exitPrice) {
+        if (!trade || !isFinitePositive(exitPrice)) return 0;
+        const gross = trade.side === 'LONG'
+          ? (exitPrice - trade.entryPrice) * trade.size
+          : (trade.entryPrice - exitPrice) * trade.size;
+        const exitFee = exitPrice * trade.size * CONFIG.feeRate;
+        return gross - trade.entryFee - exitFee;
+      }
+
+      function updateCooldownAfterClose(netPnl) {
+        if (netPnl < 0) {
+          state.consecutiveLosses += 1;
+          if (state.consecutiveLosses >= CONFIG.noTradeAfterLosses) {
+            state.noMoreTrades = true;
+            logEvent('Drei Verluste in Folge: keine neuen Trades bis Testende.');
+            return;
+          }
+          state.cooldownUntil = Date.now() + (state.consecutiveLosses >= 2 ? CONFIG.cooldownTwoLossesMs : CONFIG.cooldownLossMs);
+        } else {
+          state.consecutiveLosses = 0;
+          state.cooldownUntil = Date.now() + CONFIG.cooldownWinMs;
+        }
+      }
+
+      function closeTrade(reason, forcedPriceInfo = null) {
+        const trade = state.trade;
+        if (!trade) return;
+
+        const exitInfo = forcedPriceInfo || getMarketExitPrice(trade.side, reason);
+        if (!exitInfo || !isFinitePositive(exitInfo.price)) {
+          logEvent(`Trade konnte nicht geschlossen werden: fehlender Marktpreis (${reason}).`);
+          return;
+        }
+
+        const exitPrice = exitInfo.price;
+        const gross = trade.side === 'LONG'
+          ? (exitPrice - trade.entryPrice) * trade.size
+          : (trade.entryPrice - exitPrice) * trade.size;
+        const exitFee = exitPrice * trade.size * CONFIG.feeRate;
+        const netPnl = gross - trade.entryFee - exitFee;
+        const record = {
+          side: trade.side,
+          openedAt: trade.openedAt,
+          closedAt: Date.now(),
+          entryPrice: trade.entryPrice,
+          exitPrice,
+          size: trade.size,
+          reason: `${trade.reason} | Exit: ${reason}`,
+          gross,
+          netPnl,
+          fees: trade.entryFee + exitFee,
+        };
+
+        state.totalFees += exitFee;
+        state.trades.push(record);
+        state.realizedPnl += netPnl;
+        state.balance = CONFIG.startBalance + state.realizedPnl;
+        updateCooldownAfterClose(netPnl);
+        state.trade = null;
+
+        const resultText = netPnl >= 0 ? `+${netPnl.toFixed(2)}` : netPnl.toFixed(2);
+        logEvent(`${reason}`);
+        logEvent(`Trade geschlossen ${resultText.replace('.', ',')} CHF`);
+
+        if (state.realizedPnl <= CONFIG.lossLimit && !state.lossLimitHit) {
+          state.lossLimitHit = true;
+          state.noMoreTrades = true;
+          setStatus('Loss Limit erreicht', 'status-bad');
+          logEvent('Loss Limit erreicht. Bot stoppt weitere Trades.');
+          stopTest('Loss Limit erreicht', false);
+          return;
+        }
+
+        if (!state.testRunning) {
+          setStatus('Gestoppt', 'status-warn');
+        } else if (state.noMoreTrades) {
+          setStatus('Trading gesperrt', 'status-bad');
+        } else {
+          setStatus('Cooldown aktiv', 'status-warn');
+        }
+      }
+
+      function maybeMoveStopToBreakEven() {
+        const trade = state.trade;
+        if (!trade || trade.stopMovedToBreakEven || !isFinitePositive(state.currentPrice)) return;
+        const favorableMove = trade.side === 'LONG'
+          ? state.currentPrice - trade.entryPrice
+          : trade.entryPrice - state.currentPrice;
+        const riskDistance = Math.abs(trade.entryPrice - trade.stopPrice);
+        if (!isFinitePositive(riskDistance)) return;
+        const rMultiple = favorableMove / riskDistance;
+        trade.maxFavorableR = Math.max(trade.maxFavorableR, Number.isFinite(rMultiple) ? rMultiple : 0);
+        if (rMultiple < CONFIG.trailTriggerR) return;
+
+        const breakEven = trade.side === 'LONG'
+          ? trade.entryPrice * (1 + CONFIG.breakEvenBuffer)
+          : trade.entryPrice * (1 - CONFIG.breakEvenBuffer);
+        if (trade.side === 'LONG' && breakEven > trade.stopPrice) {
+          trade.stopPrice = breakEven;
+          trade.stopMovedToBreakEven = true;
+          logEvent('Stop auf Break-even verschoben.');
+        }
+        if (trade.side === 'SHORT' && breakEven < trade.stopPrice) {
+          trade.stopPrice = breakEven;
+          trade.stopMovedToBreakEven = true;
+          logEvent('Stop auf Break-even verschoben.');
+        }
+      }
+
+      function updateTrade() {
+        const trade = state.trade;
+        if (!trade || !isFinitePositive(state.currentPrice)) return;
+
+        maybeMoveStopToBreakEven();
+
+        if (trade.side === 'LONG') {
+          if (state.currentPrice <= trade.stopPrice) {
+            closeTrade('Stop-Loss erreicht', { price: trade.stopPrice, slip: 0, reasonLabel: 'stop' });
+            return;
+          }
+          if (state.currentPrice >= trade.takeProfitPrice) {
+            closeTrade('Take-Profit erreicht', { price: trade.takeProfitPrice, slip: 0, reasonLabel: 'target' });
+          }
+          return;
+        }
+
+        if (state.currentPrice >= trade.stopPrice) {
+          closeTrade('Stop-Loss erreicht', { price: trade.stopPrice, slip: 0, reasonLabel: 'stop' });
+          return;
+        }
+        if (state.currentPrice <= trade.takeProfitPrice) {
+          closeTrade('Take-Profit erreicht', { price: trade.takeProfitPrice, slip: 0, reasonLabel: 'target' });
+        }
+      }
+
+      function generateSignal() {
+        if (!state.testRunning || state.trade || state.noMoreTrades) return 'NONE';
+        if (!state.pageVisible) return 'NONE';
+        if (Date.now() >= state.endTimestamp) return 'NONE';
+        if (!isLiveDataHealthy()) return 'NONE';
+        if (getCooldownRemainingMs() > 0) return 'NONE';
+        if (!isFinitePositive(state.ema9) || !isFinitePositive(state.ema21) || state.prices.length < 21) return 'NONE';
+
+        const momentum = getMomentum();
+        const spread = getSpreadPercent();
+        const spreadOkay = Number.isFinite(spread) && spread <= getSpreadLimit();
+        if (!spreadOkay) return 'NONE';
+
+        const elapsed = Date.now() - state.startTimestamp;
+        state.relaxedEntry = elapsed >= CONFIG.entryRelaxAfterMs && state.trades.length === 0;
+        const momentumThreshold = state.relaxedEntry ? CONFIG.relaxedMomentumThreshold : CONFIG.normalMomentumThreshold;
+
+        const longReady = state.ema9 > state.ema21
+          && state.currentPrice > state.ema9
+          && momentum > momentumThreshold;
+
+        const shortReady = state.ema9 < state.ema21
+          && state.currentPrice < state.ema9
+          && momentum < -momentumThreshold;
+
+        if (longReady) return 'LONG';
+        if (shortReady) return 'SHORT';
+        return 'NONE';
+      }
+
+      function evaluateTrading() {
+        if (state.trade) {
+          updateTrade();
+          return;
+        }
+
+        const signal = generateSignal();
+        state.lastSignal = signal;
+        if (signal === 'NONE') return;
+
+        const momentum = getMomentum();
+        const spread = getSpreadPercent();
+        const reason = [
+          `EMA9 ${signal === 'LONG' ? '>' : '<'} EMA21`,
+          `Preis ${signal === 'LONG' ? 'über' : 'unter'} EMA9`,
+          `Momentum ${momentum >= 0 ? '+' : ''}${(momentum * 100).toFixed(3)}%`,
+          `Spread ${(spread * 100).toFixed(3)}%`,
+          state.relaxedEntry ? 'Schwelle leicht reduziert' : 'Standardschwelle aktiv'
+        ].join(' | ');
+        openTrade(signal, reason);
+      }
+
+      function updateDrawdown() {
+        const unrealized = getUnrealizedPnl();
+        const equity = CONFIG.startBalance + state.realizedPnl + unrealized;
+        state.equityPeak = Math.max(state.equityPeak, equity);
+        const drawdown = state.equityPeak - equity;
+        state.maxDrawdown = Math.max(state.maxDrawdown, drawdown);
+      }
+
+      function getUnrealizedPnl() {
+        const trade = state.trade;
+        if (!trade) return 0;
+        const exit = trade.side === 'LONG' ? state.bid : state.ask;
+        const fallback = isFinitePositive(exit) ? exit : state.currentPrice;
+        return getCurrentTradePnl(trade, fallback);
+      }
+
+      function updateUI() {
+        els.priceValue.textContent = formatPrice(state.currentPrice);
+        els.bidValue.textContent = formatPrice(state.bid);
+        els.askValue.textContent = formatPrice(state.ask);
+        els.lastTradeValue.textContent = formatPrice(state.lastTrade);
+        els.timeValue.textContent = formatRemainingTime();
+        els.balanceValue.textContent = formatChf(CONFIG.startBalance + state.realizedPnl + getUnrealizedPnl());
+        els.positionValue.textContent = state.trade ? state.trade.side : 'Keine';
+        els.entryValue.textContent = state.trade ? formatPrice(state.trade.entryPrice) : '—';
+        els.stopValue.textContent = state.trade ? formatPrice(state.trade.stopPrice) : '—';
+        els.targetValue.textContent = state.trade ? formatPrice(state.trade.takeProfitPrice) : '—';
+        els.sizeValue.textContent = state.trade ? formatSize(state.trade.size) : '—';
+        els.unrealizedValue.textContent = formatChf(getUnrealizedPnl());
+        els.realizedValue.textContent = formatChf(state.realizedPnl);
+        els.tradesValue.textContent = String(state.trades.length);
+        els.winnersValue.textContent = String(getWinningTrades().length);
+        els.losersValue.textContent = String(getLosingTrades().length);
+        els.winRateValue.textContent = `${getWinRate().toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+        els.drawdownValue.textContent = formatChf(state.maxDrawdown);
+        els.feesValue.textContent = formatChf(state.totalFees);
+        els.riskValue.textContent = formatChf(CONFIG.riskPerTrade);
+        els.debugPoints.textContent = String(state.prices.length);
+        els.debugEma9.textContent = formatPrice(state.ema9);
+        els.debugEma21.textContent = formatPrice(state.ema21);
+        els.debugMomentum.textContent = formatPercent(getMomentum());
+        els.debugSpread.textContent = formatPercent(getSpreadPercent());
+        els.debugSignal.textContent = state.lastSignal;
+        els.debugCooldown.textContent = `${Math.ceil(getCooldownRemainingMs() / 1000)}s`;
+        els.startBtn.disabled = state.testRunning || !isLiveDataHealthy();
+        els.stopBtn.disabled = !state.testRunning && !state.trade;
+      }
+
+      function drawChart() {
+        const ctx = chartCtx;
+        const canvas = els.chartCanvas;
+        const dpr = window.devicePixelRatio || 1;
+        const cssWidth = canvas.clientWidth || 720;
+        const cssHeight = canvas.clientHeight || 250;
+        if (canvas.width !== Math.floor(cssWidth * dpr) || canvas.height !== Math.floor(cssHeight * dpr)) {
+          canvas.width = Math.floor(cssWidth * dpr);
+          canvas.height = Math.floor(cssHeight * dpr);
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+        const cutoff = Date.now() - CONFIG.chartWindowMs;
+        const points = state.prices.filter(point => point.time >= cutoff);
+        if (points.length < 2) {
+          ctx.fillStyle = 'rgba(149, 168, 200, 0.8)';
+          ctx.font = '14px sans-serif';
+          ctx.fillText('Warte auf Live-Daten …', 18, 24);
+          return;
+        }
+
+        const values = [];
+        points.forEach(point => {
+          if (Number.isFinite(point.price)) values.push(point.price);
+          if (Number.isFinite(point.ema9)) values.push(point.ema9);
+          if (Number.isFinite(point.ema21)) values.push(point.ema21);
+        });
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const pad = Math.max((max - min) * 0.1, 1);
+        const low = min - pad;
+        const high = max + pad;
+        const width = cssWidth;
+        const height = cssHeight;
+        const left = 10;
+        const right = width - 10;
+        const top = 14;
+        const bottom = height - 20;
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i += 1) {
+          const y = top + ((bottom - top) / 3) * i;
+          ctx.beginPath();
+          ctx.moveTo(left, y);
+          ctx.lineTo(right, y);
+          ctx.stroke();
+        }
+
+        const xFor = time => left + ((time - points[0].time) / (points[points.length - 1].time - points[0].time || 1)) * (right - left);
+        const yFor = price => bottom - ((price - low) / (high - low || 1)) * (bottom - top);
+
+        function plot(key, color, widthPx) {
+          ctx.beginPath();
+          let started = false;
+          points.forEach(point => {
+            const value = point[key];
+            if (!Number.isFinite(value)) return;
+            const x = xFor(point.time);
+            const y = yFor(value);
+            if (!started) {
+              ctx.moveTo(x, y);
+              started = true;
+            } else {
+              ctx.lineTo(x, y);
+            }
+          });
+          ctx.strokeStyle = color;
+          ctx.lineWidth = widthPx;
+          ctx.stroke();
+        }
+
+        plot('price', '#f4f8ff', 2);
+        plot('ema9', '#23c9a9', 1.7);
+        plot('ema21', '#2f7cff', 1.7);
+
+        ctx.fillStyle = 'rgba(149, 168, 200, 0.85)';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`High ${formatPrice(high)}`, 14, 14);
+        ctx.fillText(`Low ${formatPrice(low)}`, 14, height - 6);
+      }
+
+      function getWinningTrades() {
+        return state.trades.filter(trade => trade.netPnl > 0);
+      }
+
+      function getLosingTrades() {
+        return state.trades.filter(trade => trade.netPnl < 0);
+      }
+
+      function getWinRate() {
+        if (!state.trades.length) return 0;
+        return (getWinningTrades().length / state.trades.length) * 100;
+      }
+
+      function computeReport() {
+        const wins = getWinningTrades();
+        const losses = getLosingTrades();
+        const avgWin = wins.length ? wins.reduce((sum, trade) => sum + trade.netPnl, 0) / wins.length : 0;
+        const avgLoss = losses.length ? losses.reduce((sum, trade) => sum + trade.netPnl, 0) / losses.length : 0;
+        const biggestWin = wins.length ? Math.max(...wins.map(trade => trade.netPnl)) : 0;
+        const biggestLoss = losses.length ? Math.min(...losses.map(trade => trade.netPnl)) : 0;
+        const grossProfit = wins.reduce((sum, trade) => sum + trade.netPnl, 0);
+        const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.netPnl, 0));
+        const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Infinity : 0);
+        const endBalance = CONFIG.startBalance + state.realizedPnl;
+        const pnlPercent = ((endBalance / CONFIG.startBalance) - 1) * 100;
+
+        const profitFactorText = Number.isFinite(profitFactor)
+          ? profitFactor.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '∞';
+
+        return [
+          `Startsaldo: ${formatChf(CONFIG.startBalance)}`,
+          `Endsaldo: ${formatChf(endBalance)}`,
+          `Netto-PnL: ${formatChf(state.realizedPnl)}`,
+          `PnL %: ${pnlPercent.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`,
+          `Trades: ${state.trades.length}`,
+          `Gewinner: ${wins.length}`,
+          `Verlierer: ${losses.length}`,
+          `Win Rate: ${getWinRate().toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`,
+          `Durchschnittlicher Gewinn: ${formatChf(avgWin)}`,
+          `Durchschnittlicher Verlust: ${formatChf(avgLoss)}`,
+          `Größter Gewinn: ${formatChf(biggestWin)}`,
+          `Größter Verlust: ${formatChf(biggestLoss)}`,
+          `Maximaler Drawdown: ${formatChf(state.maxDrawdown)}`,
+          `Gebühren: ${formatChf(state.totalFees)}`,
+          `Profit Factor: ${profitFactorText}`,
+          '',
+          'Dieser kurze Test beweist keine langfristige Profitabilität.'
+        ].join('\n');
+      }
+
+      function updateReport() {
+        els.reportValue.textContent = computeReport();
+      }
+
+      function formatRemainingTime() {
+        if (!state.testRunning && !state.testFinished) return '10:00';
+        const remainingMs = Math.max(0, state.endTimestamp - Date.now());
+        const totalSeconds = Math.ceil(remainingMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+
+      function finishTest(reason) {
+        if (state.testFinished) return;
+        state.testRunning = false;
+        state.testFinished = true;
+        clearInterval(state.timerId);
+        state.timerId = null;
+        setStatus(reason, reason === 'Loss Limit erreicht' ? 'status-bad' : 'status-warn');
+        updateReport();
+        updateUI();
+        logEvent(`Test beendet: ${reason}.`);
+      }
+
+      function stopTest(reason = 'Manuell gestoppt', closeOpenTrade = true) {
+        if (!state.testRunning && !state.trade) return;
+        state.testRunning = false;
+        state.noMoreTrades = true;
+        clearInterval(state.timerId);
+        state.timerId = null;
+        if (closeOpenTrade && state.trade) {
+          const price = getMidPrice();
+          if (isFinitePositive(price)) {
+            closeTrade(reason, { price, slip: 0, reasonLabel: 'manual' });
+          }
+        }
+        finishTest(reason);
+      }
+
+      function onTimerTick() {
+        if (!state.testRunning) return;
+        if (Date.now() >= state.endTimestamp) {
+          state.noMoreTrades = true;
+          if (state.trade) {
+            const price = getMidPrice();
+            if (isFinitePositive(price)) {
+              closeTrade('Testzeit beendet - Position automatisch geschlossen', { price, slip: 0, reasonLabel: 'time' });
+            }
+          }
+          finishTest('10 Minuten abgelaufen');
+          return;
+        }
+
+        if (!isLiveDataHealthy()) {
+          setStatus('Warte auf Live-Daten', 'status-warn');
+        } else if (state.trade) {
+          setStatus(`${state.trade.side} aktiv`, state.trade.side === 'LONG' ? 'status-good' : 'status-warn');
+        } else if (state.noMoreTrades) {
+          setStatus('Trading gesperrt', 'status-bad');
+        } else if (getCooldownRemainingMs() > 0) {
+          setStatus('Cooldown aktiv', 'status-warn');
+        } else {
+          setStatus('Suche Setup', 'status-good');
+        }
+
+        updateDrawdown();
+        updateUI();
+      }
+
+      function resetBot() {
+        clearInterval(state.timerId);
+        state.timerId = null;
+        state.testRunning = false;
+        state.testFinished = false;
+        state.startTimestamp = 0;
+        state.endTimestamp = 0;
+        state.trade = null;
+        state.trades = [];
+        state.realizedPnl = 0;
+        state.totalFees = 0;
+        state.balance = CONFIG.startBalance;
+        state.equityPeak = CONFIG.startBalance;
+        state.maxDrawdown = 0;
+        state.cooldownUntil = 0;
+        state.consecutiveLosses = 0;
+        state.noMoreTrades = false;
+        state.lossLimitHit = false;
+        state.relaxedEntry = false;
+        state.lastSignal = 'NONE';
+        setStatus('Bereit');
+        els.reportValue.textContent = 'Noch kein Abschlussbericht vorhanden.';
+        els.logContainer.innerHTML = '';
+        logEvent('Bot zurückgesetzt.');
+        updateUI();
+        drawChart();
+      }
+
+      function startTest() {
+        if (state.testRunning) {
+          logEvent('Start ignoriert: Test läuft bereits.');
+          return;
+        }
+        if (!isLiveDataHealthy()) {
+          logEvent('Start blockiert: keine stabilen Live-Daten.');
+          setStatus('Keine Live-Daten', 'status-bad');
+          updateUI();
+          return;
+        }
+
+        state.testRunning = true;
+        state.testFinished = false;
+        state.startTimestamp = Date.now();
+        state.endTimestamp = state.startTimestamp + CONFIG.sessionSeconds * 1000;
+        state.trade = null;
+        state.trades = [];
+        state.realizedPnl = 0;
+        state.totalFees = 0;
+        state.balance = CONFIG.startBalance;
+        state.equityPeak = CONFIG.startBalance;
+        state.maxDrawdown = 0;
+        state.cooldownUntil = 0;
+        state.consecutiveLosses = 0;
+        state.noMoreTrades = false;
+        state.lossLimitHit = false;
+        state.relaxedEntry = false;
+        els.logContainer.innerHTML = '';
+        updateReport();
+        logEvent('10-Minuten-Test gestartet.');
+        setStatus('Suche Setup', 'status-good');
+        clearInterval(state.timerId);
+        state.timerId = setInterval(onTimerTick, 250);
+        onTimerTick();
+      }
+
+      function handleMarketData(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        const data = payload.data || payload;
+        const stream = payload.stream || '';
+        let touched = false;
+
+        if (stream.includes('@bookTicker') || (data.b && data.a)) {
+          const bid = Number(data.b);
+          const ask = Number(data.a);
+          if (isFinitePositive(bid) && isFinitePositive(ask) && ask >= bid) {
+            state.bid = bid;
+            state.ask = ask;
+            touched = true;
+            const spread = getSpreadPercent();
+            if (Number.isFinite(spread)) state.spreads.push({ time: Date.now(), value: spread });
+          }
+        }
+
+        if (stream.includes('@trade') || data.p) {
+          const price = Number(data.p);
+          if (isFinitePositive(price)) {
+            state.lastTrade = price;
+            state.currentPrice = isFinitePositive(state.bid) && isFinitePositive(state.ask)
+              ? (state.bid + state.ask) / 2
+              : price;
+            touched = true;
+          }
+        }
+
+        if (!touched || !isFinitePositive(state.currentPrice)) return;
+        state.lastTickAt = Date.now();
+        updateIndicators(state.currentPrice);
+        state.prices.push({
+          time: state.lastTickAt,
+          price: state.currentPrice,
+          ema9: state.ema9,
+          ema21: state.ema21,
+        });
+        trimSeries();
+
+        if (state.connectionStatus !== 'CONNECTED') {
+          setConnectionStatus('CONNECTED', 'status-good');
+          logEvent('WebSocket verbunden.');
+        }
+
+        if (state.testRunning) {
+          evaluateTrading();
+          updateDrawdown();
+        }
+
+        updateUI();
+        drawChart();
+      }
+
+      function scheduleReconnect() {
+        clearTimeout(state.reconnectTimer);
+        const delay = Math.min(CONFIG.reconnectBaseMs * (2 ** state.reconnectAttempts), CONFIG.reconnectMaxMs);
+        state.reconnectAttempts += 1;
+        setConnectionStatus('RECONNECTING', 'status-warn');
+        state.reconnectTimer = setTimeout(connectWebSocket, delay);
+      }
+
+      function connectWebSocket() {
+        clearTimeout(state.reconnectTimer);
+        if (state.ws) {
+          try { state.ws.close(); } catch (error) { /* noop */ }
+        }
+
+        setConnectionStatus('CONNECTING', 'status-warn');
+        const url = 'wss://stream.binance.com:9443/stream?streams=btcusdt@bookTicker/btcusdt@trade';
+        const ws = new WebSocket(url);
+        state.ws = ws;
+
+        ws.addEventListener('open', () => {
+          state.reconnectAttempts = 0;
+          setConnectionStatus('CONNECTED', 'status-good');
+          logEvent('WebSocket verbunden.');
+          updateUI();
+        });
+
+        ws.addEventListener('message', event => {
+          try {
+            const payload = JSON.parse(event.data);
+            handleMarketData(payload);
+          } catch (error) {
+            logEvent('Ungültige WebSocket-Nachricht verworfen.');
+          }
+        });
+
+        ws.addEventListener('error', () => {
+          setConnectionStatus('DISCONNECTED', 'status-bad');
+          logEvent('WebSocket-Fehler erkannt.');
+        });
+
+        ws.addEventListener('close', () => {
+          setConnectionStatus('DISCONNECTED', 'status-bad');
+          logEvent('WebSocket getrennt.');
+          if (state.testRunning && state.trade) {
+            setStatus('Verbindung verloren - Position wird überwacht mit letztem Preis', 'status-warn');
+          }
+          scheduleReconnect();
+          updateUI();
+        });
+      }
+
+      function bindEvents() {
+        els.startBtn.addEventListener('click', startTest);
+        els.stopBtn.addEventListener('click', () => stopTest('Manuell gestoppt', true));
+        els.resetBtn.addEventListener('click', resetBot);
+        document.addEventListener('visibilitychange', () => {
+          state.pageVisible = document.visibilityState === 'visible';
+          logEvent(state.pageVisible ? 'Browser wieder aktiv.' : 'Browser im Hintergrund. Keine neuen Trades bis zur Rückkehr.');
+          updateUI();
+        });
+        window.addEventListener('resize', drawChart);
+      }
+
+      function initialize() {
+        bindEvents();
+        connectWebSocket();
+        updateUI();
+        updateReport();
+        drawChart();
+        logEvent('Paper Trading Test bereit.');
+      }
+
+      initialize();
+    })();
+  </script>
+</body>
+</html>
