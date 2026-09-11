@@ -1,0 +1,2 @@
+# traiding-bot-test
+Traidingbot
