@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections import deque
 from dataclasses import dataclass
 
 import websockets
@@ -32,6 +33,7 @@ class MarketDataFeed:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self.quote_seen: set[tuple[str, float, float, float]] = set()
+        self.quote_order: deque[tuple[str, float, float, float]] = deque()
         self.candle_buffer: list[Candle] = []
 
     @property
@@ -74,6 +76,8 @@ class MarketDataFeed:
                         self.state.last_msg_recv_ts = time.time()
                         await self._handle_message(raw, generation)
             except Exception as exc:  # pragma: no cover - network errors in tests
+                if self._stop.is_set():
+                    break
                 self.state.connected = False
                 await self.on_info("warn", "Feed reconnect", {"error": str(exc), "attempt": self.state.reconnect_attempt})
                 delay = min(30.0, base * (2 ** min(5, self.state.reconnect_attempt - 1)))
@@ -97,8 +101,10 @@ class MarketDataFeed:
             if key in self.quote_seen:
                 return
             self.quote_seen.add(key)
-            if len(self.quote_seen) > MAX_BUFFER:
-                self.quote_seen = set(list(self.quote_seen)[-MAX_BUFFER:])
+            self.quote_order.append(key)
+            if len(self.quote_order) > MAX_BUFFER:
+                old = self.quote_order.popleft()
+                self.quote_seen.discard(old)
             q = Quote(symbol=symbol, bid=bid, ask=ask, quote_ts=quote_ts, recv_ts=recv_ts)
             self.state.last_quote = q
             await self.on_quote(q)

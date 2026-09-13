@@ -12,6 +12,7 @@
     .row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.value{font-weight:700}.badge{padding:3px 8px;border-radius:999px;border:1px solid var(--border);display:inline-block}
     .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)} button,input,select{width:100%;background:#192a44;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px}
     button{font-weight:700;cursor:pointer}.events{max-height:180px;overflow:auto;font-size:.9rem}.small{font-size:.86rem} table{width:100%;font-size:.9rem;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--border);text-align:left}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #2f7cff;outline-offset:2px}
     @media(max-width:640px){.row,.row3{grid-template-columns:1fr}}
   </style>
 </head>
@@ -47,6 +48,7 @@
       <button id="createBot">Bot erstellen</button>
     </div>
     <table><thead><tr><th>Name</th><th>Vorlage</th><th>Status</th><th>Aktion</th></tr></thead><tbody id="botsTable"></tbody></table>
+    <div id="botDetails" class="small muted" aria-live="polite">Keine Bot-Details ausgewählt.</div>
   </div>
 
   <div class="card">
@@ -69,6 +71,7 @@ const reserved = document.getElementById('reserved');
 const openPnl = document.getElementById('openPnl');
 const events = document.getElementById('events');
 const botsTable = document.getElementById('botsTable');
+const botDetails = document.getElementById('botDetails');
 const labOut = document.getElementById('labOut');
 let runId = null;
 
@@ -82,25 +85,66 @@ async function refreshDashboard(){
   try {
     const d = await api('/api/dashboard');
     backendNotice.textContent = 'Backend verbunden'; backendNotice.className='badge ok';
-    feedStatus.textContent = d.feed_connected ? 'verbunden' : 'wartet';
-    quoteAge.textContent = d.quote_age_seconds==null?'—':`${d.quote_age_seconds.toFixed(1)}s`;
-    activeBots.textContent = d.bots_active;
-    openPos.textContent = d.open_positions;
-    reserved.textContent = d.session_risk.reserved.toFixed(2)+' USDT';
-    openPnl.textContent = d.session_risk.estimated_open_pnl.toFixed(2)+' USDT';
-    events.innerHTML = d.events.map(e=>`<div>${new Date(e.ts*1000).toLocaleTimeString('de-DE')} · ${e.level.toUpperCase()} · ${e.message}</div>`).join('') || '<div class="muted">Keine Ereignisse</div>';
+    renderDashboard(d);
   } catch {
     backendNotice.textContent = 'Backend nicht verbunden'; backendNotice.className='badge bad';
   }
 }
 
+function renderDashboard(d){
+  feedStatus.textContent = d.feed_connected ? 'verbunden' : 'wartet';
+  quoteAge.textContent = d.quote_age_seconds==null?'—':`${d.quote_age_seconds.toFixed(1)}s`;
+  activeBots.textContent = d.bots_active;
+  openPos.textContent = d.open_positions;
+  reserved.textContent = d.session_risk.reserved.toFixed(2)+' USDT';
+  openPnl.textContent = d.session_risk.estimated_open_pnl.toFixed(2)+' USDT';
+  events.replaceChildren();
+  if (!d.events.length) {
+    const empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.textContent = 'Keine Ereignisse';
+    events.appendChild(empty);
+  } else {
+    d.events.forEach((e) => {
+      const row = document.createElement('div');
+      row.textContent = `${new Date(e.ts*1000).toLocaleTimeString('de-DE')} · ${String(e.level).toUpperCase()} · ${String(e.message)}`;
+      events.appendChild(row);
+    });
+  }
+}
+
 async function loadBots(){
   const bots = await api('/api/bots');
-  botsTable.innerHTML = bots.map(b=>`<tr><td>${b.name}</td><td>${b.template}</td><td>${b.status}</td><td><div class='row3'><button onclick="act('${b.id}','start')">Start</button><button onclick="act('${b.id}','pause')">Pause</button><button onclick="act('${b.id}','stop')">Stop</button></div><div><a href="#" onclick="details('${b.id}');return false;">Details</a></div></td></tr>`).join('');
+  botsTable.replaceChildren();
+  bots.forEach((b) => {
+    const botId = b.bot_id || b.id;
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td'); tdName.textContent = b.name;
+    const tdTemplate = document.createElement('td'); tdTemplate.textContent = b.template;
+    const tdStatus = document.createElement('td'); tdStatus.textContent = b.status;
+    const tdAction = document.createElement('td');
+    const wrap = document.createElement('div'); wrap.className = 'row3';
+    ['start','pause','stop'].forEach((action) => {
+      const btn = document.createElement('button');
+      btn.textContent = action.charAt(0).toUpperCase() + action.slice(1);
+      btn.addEventListener('click', () => act(botId, action));
+      wrap.appendChild(btn);
+    });
+    const detailWrap = document.createElement('div');
+    const detail = document.createElement('button');
+    detail.type = 'button';
+    detail.textContent = 'Details';
+    detail.addEventListener('click', () => { details(botId); });
+    detailWrap.appendChild(detail);
+    tdAction.appendChild(wrap);
+    tdAction.appendChild(detailWrap);
+    tr.append(tdName, tdTemplate, tdStatus, tdAction);
+    botsTable.appendChild(tr);
+  });
 }
 
 window.act = async (id, action)=>{ await api(`/api/bots/${id}/action`,'POST',{action}); await loadBots(); };
-window.details = async (id)=>{ const d = await api(`/api/bots/${id}`); alert(`Bot ${d.name}\nStatus: ${d.status}\nWarm-up: ${d.warmup.candles}\nSignal: ${d.signal_reason}`); };
+window.details = async (id)=>{ const d = await api(`/api/bots/${id}`); botDetails.textContent = `Bot ${d.name} · Status: ${d.status} · Warm-up: ${d.warmup.candles} · Signal: ${d.signal_reason}`; };
 
 document.getElementById('createBot').onclick = async ()=>{
   const body = {name:botName.value,template:template.value,symbol:symbol.value,budget_usdt:Number(budget.value),params:{risk_per_trade:5}};
@@ -123,8 +167,8 @@ document.getElementById('runCompare').onclick = async ()=>{
 };
 
 const es = new EventSource('/api/stream');
-es.onmessage = (ev)=>{ try{const m = JSON.parse(ev.data); if(m.type==='heartbeat'){refreshDashboard();}}catch{} };
-setInterval(refreshDashboard, 3000);
+es.onmessage = (ev)=>{ try{const m = JSON.parse(ev.data); if(m.type==='heartbeat' && m.dashboard){ backendNotice.textContent='Backend verbunden'; backendNotice.className='badge ok'; renderDashboard(m.dashboard);} }catch{} };
+es.onerror = ()=>{ refreshDashboard(); };
 refreshDashboard(); loadBots();
 </script>
 </body>

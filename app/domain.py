@@ -43,6 +43,8 @@ class Position:
     entry_ts: float
     event_id: str
     reserved_usdt: float
+    run_id: str
+    reserved_shared: bool
 
 
 @dataclass

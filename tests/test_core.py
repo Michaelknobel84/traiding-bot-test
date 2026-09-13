@@ -34,6 +34,7 @@ def test_strategy_signals_and_warmup():
     s = TrendStrategy()
     candles = mk_candles(s.min_history - 1)
     assert len(candles) < s.min_history
+    assert len(candles) + 1 == s.min_history
     sig = s.signal(mk_candles(s.min_history + 5))
     assert sig.action in {"open_long", "close_long", "hold"}
 
@@ -90,6 +91,16 @@ def test_shared_exposure_and_loss_limits(tmp_path):
         w.on_quote(mk_quote(c.close))
         w.on_candle(c)
     assert bot.position is None
+
+
+def test_new_session_resets_shared_risk_state(tmp_path):
+    w, _ = mk_worker(tmp_path)
+    w.create_bot({"name": "a", "template": "trend", "symbol": "BTCUSDT", "params": {"risk_per_trade": 5}, "budget_usdt": 100, "version": "v1"})
+    w.shared_risk.reserved = 55
+    w.shared_risk.realized_pnl = -10
+    w.start_live_session("shared", 600)
+    assert w.shared_risk.reserved == 0
+    assert w.shared_risk.realized_pnl == 0
 
 
 @pytest.mark.asyncio
@@ -163,6 +174,21 @@ def test_missing_quote_at_session_end(tmp_path):
     if bot.position:
         w.tick()
         assert bot.pending_close_reason is not None or run["impaired"]
+
+def test_pending_close_clears_on_fresh_quote(tmp_path):
+    w, _ = mk_worker(tmp_path)
+    b = w.create_bot({"name": "a", "template": "trend", "symbol": "BTCUSDT", "params": {"risk_per_trade": 5}, "budget_usdt": 100, "version": "v1"})
+    w.start_live_session("shared", 1)
+    bot = w.bots[b["bot_id"]]
+    for c in mk_candles(40):
+        w.on_quote(mk_quote(c.close))
+        w.on_candle(c)
+    if bot.position:
+        w.on_quote(mk_quote(bot.position.entry_price, ts=time.time() - 10))
+        w.tick()
+        assert bot.pending_close_reason is not None
+        w.on_quote(mk_quote(bot.position.entry_price + 1, ts=time.time()))
+        assert bot.pending_close_reason is None
 
 
 def test_process_restart_marks_interrupted(tmp_path):

@@ -56,6 +56,7 @@ class Database:
               reason_open TEXT NOT NULL,
               reason_close TEXT
             );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_run_bot_event ON trades(run_id, bot_id, event_id);
             CREATE TABLE IF NOT EXISTS events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               run_id TEXT,
@@ -84,13 +85,22 @@ class Database:
 
     def list_bots(self) -> list[dict]:
         rows = self.conn.execute("SELECT * FROM bots ORDER BY created_ts DESC").fetchall()
-        return [
-            {
-                **dict(r),
-                "params": json.loads(r["params_json"]),
-            }
-            for r in rows
-        ]
+        normalized = []
+        for r in rows:
+            normalized.append(
+                {
+                    "bot_id": r["id"],
+                    "name": r["name"],
+                    "template": r["template"],
+                    "symbol": r["symbol"],
+                    "params": json.loads(r["params_json"]),
+                    "budget_usdt": r["budget_usdt"],
+                    "version": r["version"],
+                    "status": r["status"],
+                    "created_ts": r["created_ts"],
+                }
+            )
+        return normalized
 
     def update_bot_status(self, bot_id: str, status: str) -> None:
         self.conn.execute("UPDATE bots SET status=? WHERE id=?", (status, bot_id))
@@ -123,31 +133,62 @@ class Database:
         self.conn.commit()
 
     def add_trade(self, trade: dict) -> None:
-        self.conn.execute(
-            "INSERT OR REPLACE INTO trades(id,run_id,bot_id,event_id,symbol,qty,entry_price,exit_price,entry_ts,exit_ts,fees,pnl_net,status,reason_open,reason_close) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                trade["id"],
-                trade["run_id"],
-                trade["bot_id"],
-                trade["event_id"],
-                trade["symbol"],
-                trade["qty"],
-                trade["entry_price"],
-                trade.get("exit_price"),
-                trade["entry_ts"],
-                trade.get("exit_ts"),
-                trade["fees"],
-                trade.get("pnl_net"),
-                trade["status"],
-                trade["reason_open"],
-                trade.get("reason_close"),
-            ),
-        )
+        existing = self.conn.execute(
+            "SELECT id FROM trades WHERE run_id=? AND bot_id=? AND event_id=?",
+            (trade["run_id"], trade["bot_id"], trade["event_id"]),
+        ).fetchone()
+        if existing:
+            trade_id = existing["id"]
+            self.conn.execute(
+                "UPDATE trades SET symbol=?,qty=?,entry_price=?,exit_price=?,entry_ts=?,exit_ts=?,fees=?,pnl_net=?,status=?,reason_open=?,reason_close=? WHERE id=?",
+                (
+                    trade["symbol"],
+                    trade["qty"],
+                    trade["entry_price"],
+                    trade.get("exit_price"),
+                    trade["entry_ts"],
+                    trade.get("exit_ts"),
+                    trade["fees"],
+                    trade.get("pnl_net"),
+                    trade["status"],
+                    trade["reason_open"],
+                    trade.get("reason_close"),
+                    trade_id,
+                ),
+            )
+        else:
+            self.conn.execute(
+                "INSERT INTO trades(id,run_id,bot_id,event_id,symbol,qty,entry_price,exit_price,entry_ts,exit_ts,fees,pnl_net,status,reason_open,reason_close) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    trade["id"],
+                    trade["run_id"],
+                    trade["bot_id"],
+                    trade["event_id"],
+                    trade["symbol"],
+                    trade["qty"],
+                    trade["entry_price"],
+                    trade.get("exit_price"),
+                    trade["entry_ts"],
+                    trade.get("exit_ts"),
+                    trade["fees"],
+                    trade.get("pnl_net"),
+                    trade["status"],
+                    trade["reason_open"],
+                    trade.get("reason_close"),
+                ),
+            )
         self.conn.commit()
 
     def list_trades_for_run(self, run_id: str) -> list[dict]:
         rows = self.conn.execute("SELECT * FROM trades WHERE run_id=? ORDER BY entry_ts", (run_id,)).fetchall()
         return [dict(r) for r in rows]
+
+    def get_trade(self, run_id: str, bot_id: str, event_id: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM trades WHERE run_id=? AND bot_id=? AND event_id=?",
+            (run_id, bot_id, event_id),
+        ).fetchone()
+        return dict(row) if row else None
 
     def get_run(self, run_id: str) -> dict | None:
         row = self.conn.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()

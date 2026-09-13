@@ -83,7 +83,12 @@ class TradingWorker:
         return bot
 
     def start_live_session(self, mode: str = "shared", duration_seconds: int = LIVE_SESSION_SECONDS) -> dict:
+        if self.current_run and self.current_run.get("status") == "running":
+            raise ValueError("Eine Session läuft bereits")
         now = time.time()
+        total_budget = sum(b.budget_usdt for b in self.bots.values()) or 200.0
+        self.shared_risk = SharedRiskState(total_budget=total_budget)
+        self._event_ids.clear()
         run = {
             "id": str(uuid.uuid4()),
             "mode": mode,
@@ -97,7 +102,13 @@ class TradingWorker:
         self.current_run = run
         self.db.create_run(run)
         for bot in self.bots.values():
-            if bot.status in {"created", "paused", "stopped"}:
+            bot.position = None
+            bot.pending_close_reason = None
+            bot.signal_reason = "Session gestartet"
+            bot.trade_count = 0
+            bot.warmup_complete = False
+            bot.candles = []
+            if bot.status in {"created", "paused"}:
                 bot.status = "running"
                 self.db.update_bot_status(bot.bot_id, "running")
         return run
@@ -105,6 +116,7 @@ class TradingWorker:
     def on_quote(self, quote: Quote) -> None:
         self.last_quote_by_symbol[quote.symbol] = quote
         self._process_quote_for_positions(quote)
+        self._refresh_estimated_open_pnl()
 
     def on_candle(self, candle: Candle) -> None:
         for bot in self.bots.values():
@@ -149,19 +161,22 @@ class TradingWorker:
         fill = open_long_fill(q, qty)
         notional = fill.price * qty
         fee_est = fill.fee
-        if self.current_run and self.current_run["mode"] == "shared":
+        candle_ts = int(bot.candles[-1].close_ts) if bot.candles else int(time.time())
+        event_id = f"{bot.bot_id}:{candle_ts}:open"
+        if event_id in self._event_ids:
+            return
+        if notional + fee_est > bot.budget_usdt:
+            bot.signal_reason = "Einstieg abgelehnt: Bot-Budget überschritten"
+            return
+        self._refresh_estimated_open_pnl()
+        shared_reserved = bool(self.current_run and self.current_run["mode"] == "shared")
+        if shared_reserved:
             d = self.shared_risk.can_open(bot.symbol, notional, fee_est)
             if not d.allowed:
                 bot.signal_reason = f"Einstieg abgelehnt: {d.reason}"
                 self.db.add_event(self.current_run["id"], bot.bot_id, None, "warn", bot.signal_reason, {})
                 return
             self.shared_risk.reserve(bot.symbol, notional, fee_est)
-        elif notional + fee_est > bot.budget_usdt:
-            bot.signal_reason = "Einstieg abgelehnt: Bot-Budget überschritten"
-            return
-        event_id = f"{bot.bot_id}:{int(time.time()*1000)}:open"
-        if event_id in self._event_ids:
-            return
         self._event_ids.add(event_id)
         bot.position = Position(
             symbol=bot.symbol,
@@ -172,11 +187,13 @@ class TradingWorker:
             entry_ts=time.time(),
             event_id=event_id,
             reserved_usdt=notional + fee_est,
+            run_id=self.current_run["id"] if self.current_run else "none",
+            reserved_shared=shared_reserved,
         )
         self.db.add_trade(
             {
                 "id": str(uuid.uuid4()),
-                "run_id": self.current_run["id"] if self.current_run else "none",
+                "run_id": bot.position.run_id,
                 "bot_id": bot.bot_id,
                 "event_id": event_id,
                 "symbol": bot.symbol,
@@ -200,19 +217,22 @@ class TradingWorker:
             return
         assert q
         fill = close_long_fill(q, bot.position.qty)
+        entry_fee = 0.0
+        trade = self.db.get_trade(bot.position.run_id, bot.bot_id, bot.position.event_id)
+        if trade:
+            entry_fee = float(trade["fees"])
         gross = (fill.price - bot.position.entry_price) * bot.position.qty
-        pnl = gross - fill.fee
+        net_pnl = gross - entry_fee - fill.fee
         notional = bot.position.entry_price * bot.position.qty
-        if self.current_run and self.current_run["mode"] == "shared":
-            self.shared_risk.release(bot.symbol, notional, bot.position.reserved_usdt, pnl)
-        trade = next((t for t in self.db.list_trades_for_run(self.current_run["id"] if self.current_run else "none") if t["event_id"] == bot.position.event_id), None)
+        if bot.position.reserved_shared:
+            self.shared_risk.release(bot.symbol, notional, bot.position.reserved_usdt, net_pnl)
         if trade:
             self.db.add_trade({
                 **trade,
                 "exit_price": fill.price,
                 "exit_ts": time.time(),
-                "fees": float(trade["fees"]) + fill.fee,
-                "pnl_net": pnl - float(trade["fees"]),
+                "fees": entry_fee + fill.fee,
+                "pnl_net": net_pnl,
                 "status": "closed",
                 "reason_close": reason,
             })
@@ -246,36 +266,42 @@ class TradingWorker:
             return
         if self._run_is_expired():
             for bot in self.bots.values():
+                if bot.position:
+                    self._attempt_close(bot, "Zeitlimit erreicht")
+            for bot in self.bots.values():
                 if bot.status == "running" and not bot.position:
                     bot.status = "stopped"
                     self.db.update_bot_status(bot.bot_id, "stopped")
-                elif bot.position:
-                    self._attempt_close(bot, "Zeitlimit erreicht")
             if all((b.position is None) for b in self.bots.values()):
                 self.current_run["status"] = "finished"
                 self.current_run["end_ts"] = time.time()
                 self.db.update_run(self.current_run["id"], status="finished", end_ts=self.current_run["end_ts"], impaired=int(self.current_run["impaired"]), notes=self.current_run["notes"])
 
+    def _refresh_estimated_open_pnl(self) -> None:
+        est_open = 0.0
+        for bot in self.bots.values():
+            q = self.last_quote_by_symbol.get(bot.symbol)
+            if bot.position and q and not self._quote_is_stale(q):
+                est_open += unrealized_net(bot.position, q)
+        self.shared_risk.estimated_open_pnl = est_open
+
     def dashboard(self) -> dict:
         open_positions = 0
-        est_open = 0.0
+        self._refresh_estimated_open_pnl()
         for bot in self.bots.values():
             q = self.last_quote_by_symbol.get(bot.symbol)
             if bot.position:
                 open_positions += 1
-                if q and not self._quote_is_stale(q):
-                    est_open += unrealized_net(bot.position, q)
-        self.shared_risk.estimated_open_pnl = est_open
         return {
             "backend": "online",
             "feed_connected": any(self.last_quote_by_symbol.values()),
-            "quote_age_seconds": min((time.time() - q.quote_ts for q in self.last_quote_by_symbol.values()), default=None),
+            "quote_age_seconds": max((time.time() - q.quote_ts for q in self.last_quote_by_symbol.values()), default=None),
             "bots_active": sum(1 for b in self.bots.values() if b.status == "running"),
             "open_positions": open_positions,
             "session_risk": {
                 "reserved": self.shared_risk.reserved,
                 "realized_pnl": self.shared_risk.realized_pnl,
-                "estimated_open_pnl": est_open,
+                "estimated_open_pnl": self.shared_risk.estimated_open_pnl,
                 "loss_limit": self.shared_risk.session_loss_limit,
             },
             "events": self.db.latest_events(12),
@@ -288,7 +314,9 @@ class TradingWorker:
         trades = self.db.list_trades_for_run(run_id)
         return {"run": run, "trades": trades}
 
-    def export_run_csv(self, run_id: str) -> str:
+    def export_run_csv(self, run_id: str) -> str | None:
+        if not self.db.get_run(run_id):
+            return None
         trades = self.db.list_trades_for_run(run_id)
         out = io.StringIO()
         writer = csv.DictWriter(out, fieldnames=["id", "run_id", "bot_id", "symbol", "qty", "entry_price", "exit_price", "fees", "pnl_net", "status", "reason_open", "reason_close"])
@@ -328,6 +356,8 @@ class TradingWorker:
                         c.close_ts,
                         f"bt:{c.close_ts}",
                         simulated_quote.ask,
+                        "backtest",
+                        False,
                     )
                 elif action == "close_long" and bot.position:
                     bot.position = None
@@ -345,6 +375,9 @@ class TradingWorker:
                 elif c.high >= bot.position.target_price:
                     bot.position = None
                     trades += 1
+        if bot.position and simulated_quote:
+            bot.position = None
+            trades += 1
         return {
             "trades": trades,
             "warmup_bars": strat.min_history,

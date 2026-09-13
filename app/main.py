@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import secrets
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
@@ -20,10 +22,20 @@ ROOT = Path(__file__).resolve().parent.parent
 INDEX_PATH = ROOT / "Index.html"
 
 app = FastAPI(title="Paper Trading Lab", version="0.1.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST", "PUT", "PATCH"], allow_headers=["*"])
+allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_methods=["GET", "POST", "PUT", "PATCH", "OPTIONS"], allow_headers=["*"])
 
 db = Database()
 worker = TradingWorker(db)
+API_TOKEN = os.getenv("API_TOKEN")
+
+
+def require_api_key(request: Request) -> None:
+    if not API_TOKEN:
+        return
+    provided = request.headers.get("x-api-key")
+    if not provided or not secrets.compare_digest(provided, API_TOKEN):
+        raise HTTPException(401, "Unauthorized")
 
 
 class BotCreateRequest(BaseModel):
@@ -61,12 +73,26 @@ class BacktestRequest(BaseModel):
     budget_usdt: float = 100
 
 
+class CompareVariant(BaseModel):
+    name: str
+    params: dict = Field(default_factory=dict)
+
+
+class CompareRequest(BaseModel):
+    template: str
+    symbol: str
+    candles: list[dict]
+    variants: list[CompareVariant] = Field(default_factory=list)
+
+
 class LiveStartRequest(BaseModel):
     mode: str = "shared"
-    duration_seconds: int = LIVE_SESSION_SECONDS
+    duration_seconds: int = Field(default=LIVE_SESSION_SECONDS, gt=0)
 
 
 feed: MarketDataFeed | None = None
+ticker_task: asyncio.Task | None = None
+feed_task: asyncio.Task | None = None
 
 
 @app.on_event("startup")
@@ -86,9 +112,23 @@ async def startup() -> None:
         await worker.publish({"type": "feed_info", "level": level, "message": message, "data": data})
 
     global feed
+    global ticker_task
+    global feed_task
     feed = MarketDataFeed(list(DEFAULT_SYMBOLS), on_quote, on_candle, on_info)
-    asyncio.create_task(feed.start())
-    asyncio.create_task(_ticker())
+    feed_task = asyncio.create_task(feed.start())
+    ticker_task = asyncio.create_task(_ticker())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    global ticker_task
+    global feed_task
+    if feed:
+        await feed.stop()
+    if ticker_task:
+        ticker_task.cancel()
+    if feed_task:
+        feed_task.cancel()
 
 
 async def _ticker() -> None:
@@ -118,7 +158,8 @@ async def templates() -> dict:
 
 
 @app.post("/api/bots")
-async def create_bot(payload: BotCreateRequest) -> dict:
+async def create_bot(payload: BotCreateRequest, request: Request) -> dict:
+    require_api_key(request)
     bot = worker.create_bot(payload.model_dump())
     db.add_event(worker.current_run["id"] if worker.current_run else None, bot["bot_id"], None, "info", "Bot erstellt", bot)
     return bot
@@ -130,7 +171,8 @@ async def list_bots() -> list[dict]:
 
 
 @app.post("/api/bots/{bot_id}/action")
-async def bot_action(bot_id: str, payload: BotActionRequest) -> dict:
+async def bot_action(bot_id: str, payload: BotActionRequest, request: Request) -> dict:
+    require_api_key(request)
     if bot_id not in worker.bots:
         raise HTTPException(404, "Bot nicht gefunden")
     action = payload.action
@@ -178,51 +220,76 @@ async def dashboard() -> dict:
 
 
 @app.post("/api/lab/backtest")
-async def backtest(payload: BacktestRequest) -> dict:
+async def backtest(payload: BacktestRequest, request: Request) -> dict:
+    require_api_key(request)
     if payload.symbol not in ALLOWED_SYMBOLS:
         raise HTTPException(400, "Ungültiges Symbol")
     return worker.backtest({**payload.model_dump(), "symbol": ALLOWED_SYMBOLS[payload.symbol]})
 
 
 @app.post("/api/lab/compare")
-async def compare(payload: dict) -> dict:
+async def compare(payload: CompareRequest, request: Request) -> dict:
+    require_api_key(request)
     # Begrenzter Parametervergleich
-    variants = payload.get("variants", [])[:5]
-    candles = payload.get("candles", [])
-    symbol = ALLOWED_SYMBOLS.get(payload.get("symbol", "BTC/USDT"), "BTCUSDT")
+    if payload.template not in {"trend", "range", "breakout"}:
+        raise HTTPException(400, "Ungültiges Template")
+    variants = payload.variants[:5]
+    candles = payload.candles
+    symbol_key = payload.symbol
+    if symbol_key not in ALLOWED_SYMBOLS:
+        raise HTTPException(400, "Ungültiges Symbol")
+    symbol = ALLOWED_SYMBOLS[symbol_key]
     results = []
     for v in variants:
-        results.append({"name": v.get("name", "var"), "result": worker.backtest({"template": payload.get("template", "trend"), "symbol": symbol, "candles": candles, "params": v.get("params", {})})})
+        results.append({"name": v.name, "result": worker.backtest({"template": payload.template, "symbol": symbol, "candles": candles, "params": v.params})})
     return {"results": results}
 
 
 @app.post("/api/lab/live-session")
-async def live_session(payload: LiveStartRequest) -> dict:
+async def live_session(payload: LiveStartRequest, request: Request) -> dict:
+    require_api_key(request)
     if payload.mode not in {"shared", "compare"}:
         raise HTTPException(400, "Ungültiger Modus")
-    run = worker.start_live_session(payload.mode, payload.duration_seconds)
+    try:
+        run = worker.start_live_session(payload.mode, payload.duration_seconds)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return run
 
 
 @app.get("/api/export/run/{run_id}.json")
-async def export_json(run_id: str) -> JSONResponse:
-    return JSONResponse(worker.export_run_json(run_id))
+async def export_json(run_id: str, request: Request) -> JSONResponse:
+    require_api_key(request)
+    payload = worker.export_run_json(run_id)
+    if payload.get("error") == "run_not_found":
+        raise HTTPException(404, "Run nicht gefunden")
+    return JSONResponse(payload)
 
 
 @app.get("/api/export/run/{run_id}.csv")
-async def export_csv(run_id: str) -> PlainTextResponse:
-    return PlainTextResponse(worker.export_run_csv(run_id), media_type="text/csv")
+async def export_csv(run_id: str, request: Request) -> PlainTextResponse:
+    require_api_key(request)
+    data = worker.export_run_csv(run_id)
+    if data is None:
+        raise HTTPException(404, "Run nicht gefunden")
+    return PlainTextResponse(data, media_type="text/csv")
 
 
 @app.get("/api/stream")
-async def stream() -> StreamingResponse:
+async def stream(request: Request) -> StreamingResponse:
     q = worker.subscribe()
 
     async def gen():
         try:
             yield f"data: {json.dumps({'type': 'hello', 'ts': time.time()})}\n\n"
             while True:
-                payload = await q.get()
+                if await request.is_disconnected():
+                    break
+                try:
+                    payload = await asyncio.wait_for(q.get(), timeout=1)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
                 yield f"data: {json.dumps(payload)}\n\n"
         finally:
             worker.unsubscribe(q)

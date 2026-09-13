@@ -54,6 +54,11 @@ Die Tests decken Strategie/Warm-up, deterministischen Replay, Look-ahead-Schutz,
 
 GitHub Pages kann nur das statische Frontend hosten. Für Backend + Worker ist ein laufender Python-Server erforderlich.
 
+### Optionaler Schutz für Remote-Betrieb
+
+- `API_TOKEN=<dein-token>` erzwingt `x-api-key` für schreibende Endpunkte und Export-Downloads.
+- `ALLOWED_ORIGINS=http://127.0.0.1:8000` steuert erlaubte Browser-Origin(s).
+
 ## Hinweis zu Live-Feed-Dokumentation
 
 Die offizielle Binance-Dokumentationsdomain war in dieser Sandbox nicht auflösbar; Implementierung orientiert sich an den üblichen Spot-WebSocket-Events (`bookTicker`, `kline_1m`, `trade`) und validiert Nachrichten defensiv.
