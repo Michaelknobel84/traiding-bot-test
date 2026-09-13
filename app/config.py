@@ -1,0 +1,11 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = ROOT / "paper_trading.db"
+DEFAULT_SYMBOLS = {"BTCUSDT", "ETHUSDT"}
+ALLOWED_SYMBOLS = {"BTC/USDT": "BTCUSDT", "ETH/USDT": "ETHUSDT", "BTCUSDT": "BTCUSDT", "ETHUSDT": "ETHUSDT"}
+QUOTE_STALE_SECONDS = 5
+MAX_BUFFER = 2500
+LIVE_SESSION_SECONDS = 600
+FEE_RATE = 0.001
+SLIPPAGE_BPS = 5
