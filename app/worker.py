@@ -28,6 +28,7 @@ class TradingWorker:
         self.shared_risk = SharedRiskState(total_budget=200.0)
         self.started = False
         self._event_ids: set[str] = set()
+        self.strategies: dict[str, object] = {}
 
     async def publish(self, payload: dict) -> None:
         for q in list(self.listeners):
@@ -63,6 +64,7 @@ class TradingWorker:
             status="created",
         )
         self.bots[bot_id] = bot
+        self.strategies[bot_id] = build_strategy(bot.template, bot.params)
         self.db.save_bot({
             "id": bot.bot_id,
             "name": bot.name,
@@ -125,7 +127,7 @@ class TradingWorker:
             bot.candles.append(candle)
             if len(bot.candles) > 2000:
                 bot.candles = bot.candles[-2000:]
-            strat = build_strategy(bot.template, bot.params)
+            strat = self.strategies[bot.bot_id]
             bot.warmup_complete = len(bot.candles) >= strat.min_history
             if bot.status != "running":
                 continue
@@ -146,6 +148,8 @@ class TradingWorker:
         return q is None or (time.time() - q.quote_ts) > QUOTE_STALE_SECONDS
 
     def _attempt_open(self, bot: BotRuntime, signal) -> None:
+        if not self.current_run or self.current_run.get("status") != "running":
+            return
         if bot.position or self._run_is_expired() or bot.status != "running":
             return
         q = self.last_quote_by_symbol.get(bot.symbol)

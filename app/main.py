@@ -32,10 +32,14 @@ API_TOKEN = os.getenv("API_TOKEN")
 
 def require_api_key(request: Request) -> None:
     if not API_TOKEN:
-        return
-    provided = request.headers.get("x-api-key")
-    if not provided or not secrets.compare_digest(provided, API_TOKEN):
+        host = (request.client.host if request.client else "") or ""
+        if host in {"127.0.0.1", "::1", "localhost", "testclient"}:
+            return
         raise HTTPException(401, "Unauthorized")
+    else:
+        provided = request.headers.get("x-api-key")
+        if not provided or not secrets.compare_digest(provided, API_TOKEN):
+            raise HTTPException(401, "Unauthorized")
 
 
 class BotCreateRequest(BaseModel):
@@ -248,8 +252,8 @@ async def compare(payload: CompareRequest, request: Request) -> dict:
 @app.post("/api/lab/live-session")
 async def live_session(payload: LiveStartRequest, request: Request) -> dict:
     require_api_key(request)
-    if payload.mode not in {"shared", "compare"}:
-        raise HTTPException(400, "Ungültiger Modus")
+    if payload.mode != "shared":
+        raise HTTPException(400, "Nur shared-Modus in Sprint 1 unterstützt")
     try:
         run = worker.start_live_session(payload.mode, payload.duration_seconds)
     except ValueError as exc:

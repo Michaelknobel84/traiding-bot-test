@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 import pytest
 from starlette.requests import Request
 
+import app.main as main_mod
 from app.main import app, stream, worker
 
 
@@ -46,3 +47,12 @@ async def test_stream_emits_initial_event():
     first = await resp.body_iterator.__anext__()
     text = first.decode() if isinstance(first, (bytes, bytearray)) else str(first)
     assert text.startswith("data: ")
+
+
+def test_api_token_enforcement(monkeypatch):
+    monkeypatch.setattr(main_mod, "API_TOKEN", "secret-token")
+    with TestClient(app) as client:
+        r = client.post('/api/bots', json={"name":"xx","template":"trend","symbol":"BTC/USDT","budget_usdt":100,"params":{}})
+        assert r.status_code == 401
+        r = client.post('/api/bots', headers={"x-api-key":"secret-token"}, json={"name":"xx","template":"trend","symbol":"BTC/USDT","budget_usdt":100,"params":{}})
+        assert r.status_code == 200
